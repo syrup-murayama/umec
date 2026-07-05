@@ -1,0 +1,31 @@
+{
+  "name": "create-umec",
+  "version": "0.1.0",
+  "description": "umec — EC starter kit: Cloudflare Workers × Stripe × Resend. AI-assisted setup included.",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/syrup-murayama/umec"
+  },
+  "bin": {
+    "create-umec": "./bin/setup.js"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "setup": "node ./bin/setup.js",
+    "setup:ai": "node ./bin/setup.js --ai"
+  },
+  "dependencies": {
+    "@ai-sdk/openai-compatible": "2.0.51",
+    "ai": "6.0.208",
+    "zod": "4.4.3"
+  },
+  "files": [
+    "bin",
+    "lib",
+    "prompts"
+  ],
+  "license": "MIT"
+}

@@ -1,0 +1,7 @@
+{
+  "name": "umec",
+  "private": true,
+  "description": "umec monorepo - ume + ec, minimal D2C for individual makers",
+  "engines": { "node": ">=22.12.0" },
+  "packageManager": "pnpm@9.15.9"
+}
