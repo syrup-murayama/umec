@@ -5,3 +5,4 @@ dist/
 .dev.vars
 .dev.vars.*
 .agent/
+.DS_Store
