@@ -1,6 +1,6 @@
 {
   "name": "@umec/core",
-  "version": "0.1.0-alpha.0",
+  "version": "0.1.0-alpha.7",
   "description": "Headless EC logic for umec — config schema and shared handlers",
   "type": "module",
   "license": "MIT",
@@ -23,6 +23,10 @@
     "./config": {
       "types": "./dist/config.d.ts",
       "import": "./dist/config.js"
+    },
+    "./access": {
+      "types": "./dist/access.d.ts",
+      "import": "./dist/access.js"
     },
     "./checkout": {
       "types": "./dist/checkout.d.ts",
@@ -58,6 +62,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "jose": "6.2.3",
     "resend": "^6.12.4",
     "stripe": "22.2.0"
   },

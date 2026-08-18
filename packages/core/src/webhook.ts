@@ -50,6 +50,7 @@ export type WebhookOrder = {
   paymentIntent: string | null;
   offerSlug: string | null;
   customFields: Record<string, string> | null;
+  metadata: Record<string, string> | null;
   createdAt: number;
 };
 
@@ -58,11 +59,18 @@ export type WebhookRecordedOrder = {
   offerSlug: string | null;
 };
 
+export type WebhookEmailResult = {
+  sessionId: string;
+  status: "sent" | "failed";
+  errorMessage?: string;
+};
+
 export type WebhookHandlerOptions = {
   claimEvent?: (eventId: string) => Promise<boolean>;
   recordRefund?: (paymentIntentId: string) => Promise<WebhookRecordedOrder | null>;
   recordExpiry?: (sessionId: string) => Promise<WebhookRecordedOrder | null>;
   recordOrder?: (order: WebhookOrder) => Promise<void>;
+  recordEmailResult?: (result: WebhookEmailResult) => Promise<void>;
   restoreStock?: (items: WebhookItem[]) => Promise<void>;
   decrementStock?: (items: WebhookItem[]) => Promise<void>;
   incrementOfferSold?: (offerSlug: string, items: WebhookItem[]) => Promise<void>;
@@ -70,6 +78,7 @@ export type WebhookHandlerOptions = {
   renderOrderEmail?: RenderOrderEmail;
   orderEmailFrom?: string;
   orderEmailBcc?: string | string[];
+  orderEmailReplyTo?: string;
 };
 
 export type WebhookHandler = ({ request }: { request: Request }) => Promise<Response>;
@@ -144,6 +153,7 @@ export function createWebhookHandler({
   recordRefund,
   recordExpiry,
   recordOrder,
+  recordEmailResult,
   restoreStock,
   decrementStock,
   incrementOfferSold,
@@ -151,6 +161,7 @@ export function createWebhookHandler({
   renderOrderEmail,
   orderEmailFrom,
   orderEmailBcc,
+  orderEmailReplyTo,
 }: WebhookHandlerOptions = {}): WebhookHandler {
   return async ({ request }) => {
     console.log("[webhook] POST received, method:", request.method);
@@ -234,6 +245,8 @@ export function createWebhookHandler({
       if (typeof v === "string" && v.trim() !== "") cf[f.key] = v.trim();
     }
     const customFields = Object.keys(cf).length > 0 ? cf : null;
+    const { items: _items, offer_slug: _offerSlug, ...externalMetadata } = session.metadata ?? {};
+    const metadata = Object.keys(externalMetadata).length > 0 ? externalMetadata : null;
 
     const shipping =
       session.collected_information?.shipping_details ??
@@ -254,6 +267,7 @@ export function createWebhookHandler({
         paymentIntent,
         offerSlug: offerSlugFromMeta,
         customFields,
+        metadata,
         createdAt: Date.now(),
       });
       if (checkoutItems.length > 0 && decrementStock) await decrementStock(checkoutItems);
@@ -295,21 +309,39 @@ export function createWebhookHandler({
       customFields: cf,
     });
 
+    let emailResult: WebhookEmailResult;
     try {
       const resend = new Resend(resendKey);
       const { error } = await resend.emails.send({
         from: orderEmailFrom,
         to: email,
         ...(orderEmailBcc ? { bcc: orderEmailBcc } : {}),
+        ...(orderEmailReplyTo ? { reply_to: orderEmailReplyTo } : {}),
         subject,
         html,
       });
       if (error) {
-        console.error("[webhook] Resend error:", providerErrorDetails(error));
+        const details = providerErrorDetails(error);
+        console.error("[webhook] Resend error:", details);
+        emailResult = {
+          sessionId: session.id,
+          status: "failed",
+          ...(details.message ? { errorMessage: details.message } : {}),
+        };
+      } else {
+        emailResult = { sessionId: session.id, status: "sent" };
       }
     } catch (e) {
-      console.error("[webhook] Resend exception:", providerErrorDetails(e));
+      const details = providerErrorDetails(e);
+      console.error("[webhook] Resend exception:", details);
+      emailResult = {
+        sessionId: session.id,
+        status: "failed",
+        ...(details.message ? { errorMessage: details.message } : {}),
+      };
     }
+
+    if (recordEmailResult) await recordEmailResult(emailResult);
 
     return new Response("OK", { status: 200 });
   };

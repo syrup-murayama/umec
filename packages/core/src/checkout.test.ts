@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { CheckoutOffer, CheckoutOfferUnavailable } from "./checkout.js";
+import type { CheckoutCustomField, CheckoutOffer, CheckoutOfferUnavailable } from "./checkout.js";
 import type { ServerEnv } from "./env.js";
 import type { UmecShipping } from "./config.js";
 
@@ -44,7 +44,7 @@ const products = {
   },
 };
 
-const emuShipping = {
+const shippingConfig = {
   tiers: [
     { maxUnits: 2, amount: 450, label: "宅急便コンパクト" },
     { amount: 850, label: "宅急便" },
@@ -123,7 +123,7 @@ describe("createCheckoutHandler", () => {
   });
 
   it("creates line items for multiple checkout items", async () => {
-    const { postCheckout } = createPostCheckout({ shipping: emuShipping });
+    const { postCheckout } = createPostCheckout({ shipping: shippingConfig });
     const items = [
       { sku: "200ml", quantity: 4 },
       { sku: "720ml", quantity: 2 },
@@ -211,8 +211,8 @@ describe("createCheckoutHandler", () => {
     [{ items: [{ sku: "720ml", quantity: 1 }] }, 850, "宅急便"],
     [{ items: [{ sku: "720ml", quantity: 2 }] }, 850, "宅急便"],
     [{ items: [{ sku: "200ml", quantity: 1 }, { sku: "720ml", quantity: 1 }] }, 850, "宅急便"],
-  ])("preserves emu shipping options from injected shipping config for %o", async (body, expectedAmount, expectedDisplayName) => {
-    const { postCheckout } = createPostCheckout({ shipping: emuShipping });
+  ])("preserves injected shipping options from shipping config for %o", async (body, expectedAmount, expectedDisplayName) => {
+    const { postCheckout } = createPostCheckout({ shipping: shippingConfig });
 
     const response = await postCheckout(body);
 
@@ -239,9 +239,8 @@ describe("createCheckoutHandler", () => {
     const checkOffer = vi.fn().mockResolvedValue({
       priceOverrides: { "200ml": 1200, "720ml": 2800 },
       freeShipping: true,
-      recipientInfo: false,
     } satisfies CheckoutOffer);
-    const { postCheckout } = createPostCheckout({ checkOffer, shipping: emuShipping });
+    const { postCheckout } = createPostCheckout({ checkOffer, shipping: shippingConfig });
 
     const response = await postCheckout({
       offerSlug: "friends-2026",
@@ -293,12 +292,213 @@ describe("createCheckoutHandler", () => {
     );
   });
 
-  it("adds required recipient fields for offers with recipient_info enabled", async () => {
+  it("prepends injected custom fields to the optional message field", async () => {
+    const customFields = [
+      {
+        key: "class_name",
+        label: { type: "custom", custom: "クラス名" },
+        type: "text",
+        optional: false,
+        text: { maximum_length: 50 },
+      },
+      {
+        key: "child_name",
+        label: { type: "custom", custom: "お子さんのお名前" },
+        type: "text",
+        optional: false,
+        text: { maximum_length: 50 },
+      },
+    ] satisfies CheckoutCustomField[];
+    const { postCheckout } = createPostCheckout({ customFields });
+
+    const response = await postCheckout({ items: [{ sku: "200ml", quantity: 1 }] });
+
+    expect(response.status).toBe(200);
+    expect(createCheckoutSessionMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        custom_fields: [
+          ...customFields,
+          expect.objectContaining({
+            key: "message",
+            optional: true,
+            type: "text",
+            text: { maximum_length: 255 },
+          }),
+        ],
+      }),
+    );
+  });
+
+  it("adds custom fields returned by checkOffer before the optional message field", async () => {
+    const offerCustomFields = [
+      {
+        key: "class_name",
+        label: { type: "custom", custom: "クラス名" },
+        type: "text",
+        optional: false,
+        text: { maximum_length: 50 },
+      },
+      {
+        key: "child_name",
+        label: { type: "custom", custom: "お子さんのお名前" },
+        type: "text",
+        optional: false,
+        text: { maximum_length: 50 },
+      },
+    ] satisfies CheckoutCustomField[];
     const { postCheckout } = createPostCheckout({
       checkOffer: vi.fn().mockResolvedValue({
         priceOverrides: {},
         freeShipping: false,
-        recipientInfo: true,
+        customFields: offerCustomFields,
+      } satisfies CheckoutOffer),
+    });
+
+    const response = await postCheckout({
+      offerSlug: "school-2026",
+      items: [{ sku: "200ml", quantity: 1 }],
+    });
+
+    expect(response.status).toBe(200);
+    const params = createCheckoutSessionMock.mock.calls[0]?.[0] as {
+      custom_fields?: CheckoutCustomField[];
+    };
+    expect(params.custom_fields).toEqual([
+      ...offerCustomFields,
+      expect.objectContaining({
+        key: "message",
+        optional: true,
+        type: "text",
+        text: { maximum_length: 255 },
+      }),
+    ]);
+  });
+
+  it("combines static and offer-specific custom fields in that order", async () => {
+    const staticCustomFields = [
+      {
+        key: "company_name",
+        label: { type: "custom", custom: "会社名" },
+        type: "text",
+        optional: true,
+        text: { maximum_length: 100 },
+      },
+    ] satisfies CheckoutCustomField[];
+    const offerCustomFields = [
+      {
+        key: "class_name",
+        label: { type: "custom", custom: "クラス名" },
+        type: "text",
+        optional: false,
+        text: { maximum_length: 50 },
+      },
+    ] satisfies CheckoutCustomField[];
+    const { postCheckout } = createPostCheckout({
+      customFields: staticCustomFields,
+      checkOffer: vi.fn().mockResolvedValue({
+        priceOverrides: {},
+        freeShipping: false,
+        customFields: offerCustomFields,
+      } satisfies CheckoutOffer),
+    });
+
+    const response = await postCheckout({
+      offerSlug: "school-2026",
+      items: [{ sku: "200ml", quantity: 1 }],
+    });
+
+    expect(response.status).toBe(200);
+    const params = createCheckoutSessionMock.mock.calls[0]?.[0] as {
+      custom_fields?: CheckoutCustomField[];
+    };
+    expect(params.custom_fields).toEqual([
+      ...staticCustomFields,
+      ...offerCustomFields,
+      expect.objectContaining({ key: "message" }),
+    ]);
+  });
+
+  it("combines static and offer metadata while protecting reserved keys", async () => {
+    const items = [{ sku: "200ml", quantity: 1 }];
+    const { postCheckout } = createPostCheckout({
+      metadata: {
+        run_id: "static-run",
+        source: "smoke-test",
+        items: "static-items",
+        offer_slug: "static-offer",
+      },
+      checkOffer: vi.fn().mockResolvedValue({
+        priceOverrides: {},
+        freeShipping: false,
+        metadata: {
+          run_id: "offer-run",
+          cohort: "fleet",
+          items: "offer-items",
+          offer_slug: "offer-override",
+        },
+      } satisfies CheckoutOffer),
+    });
+
+    const response = await postCheckout({ offerSlug: "school-2026", items });
+
+    expect(response.status).toBe(200);
+    expect(createCheckoutSessionMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: {
+          run_id: "offer-run",
+          source: "smoke-test",
+          cohort: "fleet",
+          items: JSON.stringify(items),
+          offer_slug: "school-2026",
+        },
+      }),
+    );
+  });
+
+  it("omits an injected reserved offer_slug from regular checkout metadata", async () => {
+    const items = [{ sku: "200ml", quantity: 1 }];
+    const { postCheckout } = createPostCheckout({
+      metadata: {
+        run_id: "run-123",
+        offer_slug: "injected-offer",
+      },
+    });
+
+    const response = await postCheckout({ items });
+
+    expect(response.status).toBe(200);
+    expect(createCheckoutSessionMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: {
+          run_id: "run-123",
+          items: JSON.stringify(items),
+        },
+      }),
+    );
+  });
+
+  it("sets an injected customer email", async () => {
+    const { postCheckout } = createPostCheckout({
+      customerEmail: "customer@example.com",
+    });
+
+    const response = await postCheckout({ items: [{ sku: "200ml", quantity: 1 }] });
+
+    expect(response.status).toBe(200);
+    expect(createCheckoutSessionMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customer_email: "customer@example.com",
+      }),
+    );
+  });
+
+  it("uses the offer customer email after the static customer email", async () => {
+    const { postCheckout } = createPostCheckout({
+      customerEmail: "static@example.com",
+      checkOffer: vi.fn().mockResolvedValue({
+        priceOverrides: {},
+        freeShipping: false,
+        customerEmail: "offer@example.com",
       } satisfies CheckoutOffer),
     });
 
@@ -310,26 +510,19 @@ describe("createCheckoutHandler", () => {
     expect(response.status).toBe(200);
     expect(createCheckoutSessionMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        custom_fields: [
-          expect.objectContaining({
-            key: "class_name",
-            optional: false,
-            type: "text",
-            text: { maximum_length: 50 },
-          }),
-          expect.objectContaining({
-            key: "child_name",
-            optional: false,
-            type: "text",
-            text: { maximum_length: 50 },
-          }),
-          expect.objectContaining({
-            key: "message",
-            optional: true,
-          }),
-        ],
+        customer_email: "offer@example.com",
       }),
     );
+  });
+
+  it.each([undefined, ""])("omits customer_email when the injected value is %s", async (customerEmail) => {
+    const { postCheckout } = createPostCheckout({ customerEmail });
+
+    const response = await postCheckout({ items: [{ sku: "200ml", quantity: 1 }] });
+
+    expect(response.status).toBe(200);
+    const params = createCheckoutSessionMock.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect("customer_email" in params).toBe(false);
   });
 
   it("returns 410 for an expired offerSlug", async () => {
@@ -355,7 +548,6 @@ describe("createCheckoutHandler", () => {
       checkOffer: vi.fn().mockResolvedValue({
         priceOverrides: {},
         freeShipping: false,
-        recipientInfo: false,
         unitsRemaining: new Map([["200ml", 1]]),
       } satisfies CheckoutOffer),
     });
@@ -375,7 +567,6 @@ describe("createCheckoutHandler", () => {
       checkOffer: vi.fn().mockResolvedValue({
         priceOverrides: {},
         freeShipping: false,
-        recipientInfo: false,
         unitsRemaining: new Map([["200ml", 2]]),
       } satisfies CheckoutOffer),
     });
@@ -394,7 +585,6 @@ describe("createCheckoutHandler", () => {
       checkOffer: vi.fn().mockResolvedValue({
         priceOverrides: {},
         freeShipping: false,
-        recipientInfo: false,
         unitsRemaining: new Map(),
       } satisfies CheckoutOffer),
     });

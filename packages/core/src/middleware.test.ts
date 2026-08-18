@@ -1,6 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { createUmecMiddleware, type UmecMiddlewareContext } from "./middleware.js";
+import {
+  createUmecMiddleware,
+  type UmecLimitedPage,
+  type UmecMiddlewareContext,
+} from "./middleware.js";
 
 function context(pathname: string): UmecMiddlewareContext {
   return {
@@ -16,10 +20,6 @@ function context(pathname: string): UmecMiddlewareContext {
 }
 
 describe("createUmecMiddleware", () => {
-  beforeEach(() => {
-    vi.useRealTimers();
-  });
-
   it("adds security headers to normal responses", async () => {
     const onRequest = createUmecMiddleware({ maintenanceMode: false });
 
@@ -33,18 +33,35 @@ describe("createUmecMiddleware", () => {
     expect(response.headers.get("Referrer-Policy")).toBe("strict-origin-when-cross-origin");
   });
 
-  it("returns 404 with security headers for expired limited docs", async () => {
-    vi.setSystemTime(new Date("2026-08-13T00:00:00.000Z"));
-    const onRequest = createUmecMiddleware({ maintenanceMode: false });
+  it("returns 404 for an expired injected limited page", async () => {
+    const limitedPages = [
+      { pathPrefix: "/campaign", expiresAt: Date.now() - 1 },
+    ] satisfies UmecLimitedPage[];
+    const onRequest = createUmecMiddleware({ maintenanceMode: false, limitedPages });
     const next = vi.fn(() => new Response("ok"));
 
-    const response = await onRequest(context("/docs/asahiko2026special"), next);
+    const response = await onRequest(context("/campaign/landing"), next);
 
     expect(response.status).toBe(404);
     expect(await response.text()).toBe("Not found");
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(response.headers.get("Strict-Transport-Security")).toBe("max-age=63072000; includeSubDomains");
     expect(next).not.toHaveBeenCalled();
+  });
+
+  it("allows a limited page before expiry and does not match a similar prefix", async () => {
+    const limitedPages = [
+      { pathPrefix: "/campaign", expiresAt: Number.MAX_SAFE_INTEGER },
+    ] satisfies UmecLimitedPage[];
+    const onRequest = createUmecMiddleware({ maintenanceMode: false, limitedPages });
+
+    const pageResponse = await onRequest(context("/campaign"), () => new Response("campaign"));
+    const similarPrefixResponse = await onRequest(context("/campaign-archive"), () => new Response("archive"));
+
+    expect(pageResponse.status).toBe(200);
+    expect(await pageResponse.text()).toBe("campaign");
+    expect(similarPrefixResponse.status).toBe(200);
+    expect(await similarPrefixResponse.text()).toBe("archive");
   });
 
   it("redirects to maintenance when maintenance mode is enabled", async () => {

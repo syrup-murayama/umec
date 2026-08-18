@@ -181,7 +181,8 @@ describe("createWebhookHandler", () => {
   });
 
   it("verifies the Stripe signature and sends an injected order email", async () => {
-    const options = emailOptions();
+    const recordEmailResult = vi.fn().mockResolvedValue(undefined);
+    const options = emailOptions({ orderEmailReplyTo: "support@example.com", recordEmailResult });
     const postWebhook = createPostWebhook(options);
 
     const response = await postWebhook();
@@ -228,9 +229,24 @@ describe("createWebhookHandler", () => {
       from: "orders@example.com",
       to: "test@example.com",
       bcc: "shop@example.com",
+      reply_to: "support@example.com",
       subject: "ご注文ありがとうございます",
       html: "<p>order</p>",
     });
+    expect(recordEmailResult).toHaveBeenCalledWith({
+      sessionId: "cs_test_mock",
+      status: "sent",
+    });
+  });
+
+  it.each([undefined, ""])("omits an empty order email reply-to (%s)", async (orderEmailReplyTo) => {
+    const postWebhook = createPostWebhook(emailOptions({ orderEmailReplyTo }));
+
+    const response = await postWebhook();
+
+    expect(response.status).toBe(200);
+    expect(sendEmailMock).toHaveBeenCalledOnce();
+    expect(sendEmailMock.mock.calls[0]?.[0]).not.toHaveProperty("reply_to");
   });
 
   it("records the order and decrements stock before sending the confirmation email", async () => {
@@ -263,6 +279,7 @@ describe("createWebhookHandler", () => {
       paymentIntent: "pi_test_mock",
       offerSlug: null,
       customFields: null,
+      metadata: null,
       createdAt: expect.any(Number),
     });
     expect(decrementStock).toHaveBeenCalledWith([{ sku: "200ml", quantity: 2 }]);
@@ -279,8 +296,8 @@ describe("createWebhookHandler", () => {
         "checkout.session.completed",
         checkoutSession({
           custom_fields: [
-            { key: "class_name", type: "text", text: { value: " ばら組 " } },
-            { key: "child_name", type: "text", text: { value: " 山田花子 " } },
+            { key: "delivery_note", type: "text", text: { value: " 配送メモ " } },
+            { key: "order_note", type: "text", text: { value: " 注文メモ " } },
             { key: "message", type: "text", text: { value: " よろしく " } },
           ],
         }),
@@ -294,8 +311,8 @@ describe("createWebhookHandler", () => {
     expect(recordOrder).toHaveBeenCalledWith(
       expect.objectContaining({
         customFields: {
-          class_name: "ばら組",
-          child_name: "山田花子",
+          delivery_note: "配送メモ",
+          order_note: "注文メモ",
           message: "よろしく",
         },
       }),
@@ -303,9 +320,40 @@ describe("createWebhookHandler", () => {
     expect(options.renderOrderEmail).toHaveBeenCalledWith(
       expect.objectContaining({
         customFields: {
-          class_name: "ばら組",
-          child_name: "山田花子",
+          delivery_note: "配送メモ",
+          order_note: "注文メモ",
           message: "よろしく",
+        },
+      }),
+    );
+  });
+
+  it("passes non-reserved session metadata to recordOrder", async () => {
+    const recordOrder = vi.fn().mockResolvedValue(undefined);
+    constructEventAsyncMock.mockResolvedValue(
+      stripeEvent(
+        "checkout.session.completed",
+        checkoutSession({
+          metadata: {
+            items: JSON.stringify([{ sku: "200ml", quantity: 2 }]),
+            offer_slug: "school-2026",
+            run_id: "run-123",
+            source: "smoke-test",
+          },
+        }),
+      ),
+    );
+    const postWebhook = createPostWebhook({ recordOrder });
+
+    const response = await postWebhook();
+
+    expect(response.status).toBe(200);
+    expect(recordOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        offerSlug: "school-2026",
+        metadata: {
+          run_id: "run-123",
+          source: "smoke-test",
         },
       }),
     );
@@ -488,7 +536,8 @@ describe("createWebhookHandler", () => {
       data: null,
       error: { name: "ResendError", statusCode: 502, message: "send failed", body: { to: "test@example.com" } },
     });
-    const postWebhook = createPostWebhook(emailOptions());
+    const recordEmailResult = vi.fn().mockResolvedValue(undefined);
+    const postWebhook = createPostWebhook(emailOptions({ recordEmailResult }));
 
     const response = await postWebhook();
 
@@ -502,7 +551,36 @@ describe("createWebhookHandler", () => {
       requestId: undefined,
       message: "send failed",
     });
+    expect(recordEmailResult).toHaveBeenCalledWith({
+      sessionId: "cs_test_mock",
+      status: "failed",
+      errorMessage: "send failed",
+    });
     consoleErrorSpy.mockRestore();
+  });
+
+  it("records a failed email result when Resend throws", async () => {
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    sendEmailMock.mockRejectedValue(new Error("network failed"));
+    const recordEmailResult = vi.fn().mockResolvedValue(undefined);
+    const postWebhook = createPostWebhook(emailOptions({ recordEmailResult }));
+
+    const response = await postWebhook();
+
+    expect(response.status).toBe(200);
+    expect(recordEmailResult).toHaveBeenCalledWith({
+      sessionId: "cs_test_mock",
+      status: "failed",
+      errorMessage: "network failed",
+    });
+    consoleErrorSpy.mockRestore();
+  });
+
+  it("returns 200 after sending email when recordEmailResult is absent", async () => {
+    const postWebhook = createPostWebhook(emailOptions());
+
+    await expect(postWebhook()).resolves.toHaveProperty("status", 200);
+    expect(sendEmailMock).toHaveBeenCalledOnce();
   });
 
   it("returns 500 when STRIPE_WEBHOOK_SECRET is not configured", async () => {

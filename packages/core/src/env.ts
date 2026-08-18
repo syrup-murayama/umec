@@ -8,6 +8,8 @@ export type ServerEnv = {
   RESEND_AUDIENCE_ID: string;
   DISCORD_WEBHOOK_URL?: string;
   ALERT_DAYS_THRESHOLD?: string;
+  ACCESS_TEAM_DOMAIN?: string;
+  ACCESS_AUD?: string;
   DB?: D1Database;
 };
 

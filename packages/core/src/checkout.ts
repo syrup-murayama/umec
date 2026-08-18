@@ -13,10 +13,14 @@ type CheckoutItem = {
 
 export type CheckoutProductsMap = Record<string, UmecProduct | undefined>;
 
+export type CheckoutCustomField = Stripe.Checkout.SessionCreateParams.CustomField;
+
 export type CheckoutOffer = {
   priceOverrides: Record<string, number>;
   freeShipping: boolean;
-  recipientInfo: boolean;
+  customFields?: CheckoutCustomField[];
+  metadata?: Record<string, string>;
+  customerEmail?: string;
   unitsRemaining?: Map<string, number>;
 };
 
@@ -31,6 +35,9 @@ export type CheckOffer = (offerSlug: string) => Promise<CheckoutOffer | Checkout
 export type CheckoutHandlerOptions = {
   products: CheckoutProductsMap;
   shipping?: UmecConfig["shipping"];
+  customFields?: CheckoutCustomField[];
+  metadata?: Record<string, string>;
+  customerEmail?: string;
   checkStock?: CheckStock;
   checkOffer?: CheckOffer;
 };
@@ -56,6 +63,12 @@ function isOfferUnavailable(value: CheckoutOffer | CheckoutOfferUnavailable): va
   return "error" in value && "status" in value;
 }
 
+function omitReservedMetadata(metadata: Record<string, string>) {
+  return Object.fromEntries(
+    Object.entries(metadata).filter(([key]) => key !== "items" && key !== "offer_slug"),
+  );
+}
+
 function calcShipping(
   items: CheckoutItem[],
   products: CheckoutProductsMap,
@@ -78,6 +91,9 @@ function calcShipping(
 export function createCheckoutHandler({
   products,
   shipping,
+  customFields: staticCustomFields = [],
+  metadata: staticMetadata = {},
+  customerEmail: staticCustomerEmail,
   checkStock,
   checkOffer,
 }: CheckoutHandlerOptions): CheckoutHandler {
@@ -128,19 +144,20 @@ export function createCheckoutHandler({
     const { offerSlug } = payload as { items?: unknown; offerSlug?: unknown };
     let priceOverrides: Record<string, number> = {};
     let freeShipping = false;
-    let recipientInfo = false;
+    let offerCustomFields: CheckoutCustomField[] = [];
+    let offerMetadata: Record<string, string> = {};
+    let customerEmail = staticCustomerEmail;
 
     if (typeof offerSlug === "string" && offerSlug.trim() !== "") {
       if (!checkOffer) return jsonError("Offer not available", 503);
       const offer = await checkOffer(offerSlug.trim());
       if (!offer) return jsonError("Offer not found", 404);
       if (isOfferUnavailable(offer)) return jsonError(offer.error, offer.status);
-      recipientInfo = offer.recipientInfo;
       const offerUnits = offer.unitsRemaining;
       if (offerUnits && offerUnits.size > 0) {
         for (const { sku, quantity } of checkoutItems) {
           const remaining = offerUnits.get(sku);
-          // TOCTOU あり — 低頻度の emu では許容
+          // TOCTOU race is acceptable for low-frequency sales. Move to Durable Objects if needed.
           if (remaining !== undefined && quantity > remaining) {
             return jsonError(`Offer unit limit reached: ${sku}`, 409);
           }
@@ -148,6 +165,9 @@ export function createCheckoutHandler({
       }
       priceOverrides = offer.priceOverrides;
       freeShipping = offer.freeShipping;
+      offerCustomFields = offer.customFields ?? [];
+      offerMetadata = offer.metadata ?? {};
+      customerEmail = offer.customerEmail ?? staticCustomerEmail;
     }
 
     const shippingRate = shipping
@@ -156,7 +176,6 @@ export function createCheckoutHandler({
         : calcShipping(checkoutItems, products, shipping)
       : undefined;
     const stock = checkStock ? await checkStock(checkoutItems.map((item) => item.sku)) : new Map<string, number>();
-    // TOCTOU race is acceptable for low-frequency emu sales. Move to Durable Objects if needed.
     for (const { sku, quantity } of checkoutItems) {
       const available = stock.get(sku);
       if (available !== undefined && quantity > available) {
@@ -164,32 +183,17 @@ export function createCheckoutHandler({
       }
     }
 
-    const customFields: Stripe.Checkout.SessionCreateParams.CustomField[] = [];
-    if (recipientInfo) {
-      customFields.push(
-        {
-          key: "class_name",
-          label: { type: "custom", custom: "クラス名" },
-          type: "text",
-          optional: false,
-          text: { maximum_length: 50 },
-        },
-        {
-          key: "child_name",
-          label: { type: "custom", custom: "お子さんのお名前" },
-          type: "text",
-          optional: false,
-          text: { maximum_length: 50 },
-        },
-      );
-    }
-    customFields.push({
-      key: "message",
-      label: { type: "custom", custom: "メッセージ・ご要望（任意）" },
-      type: "text",
-      optional: true,
-      text: { maximum_length: 255 },
-    });
+    const checkoutCustomFields: CheckoutCustomField[] = [
+      ...staticCustomFields,
+      ...offerCustomFields,
+      {
+        key: "message",
+        label: { type: "custom", custom: "メッセージ・ご要望（任意）" },
+        type: "text",
+        optional: true,
+        text: { maximum_length: 255 },
+      },
+    ];
 
     try {
       const sessionParams: Stripe.Checkout.SessionCreateParams = {
@@ -204,11 +208,14 @@ export function createCheckoutHandler({
           quantity,
         })),
         metadata: {
+          ...omitReservedMetadata(staticMetadata),
+          ...omitReservedMetadata(offerMetadata),
           items: JSON.stringify(checkoutItems),
           ...(typeof offerSlug === "string" && offerSlug.trim() ? { offer_slug: offerSlug.trim() } : {}),
         },
+        ...(customerEmail ? { customer_email: customerEmail } : {}),
         phone_number_collection: { enabled: true },
-        custom_fields: customFields,
+        custom_fields: checkoutCustomFields,
         shipping_address_collection: { allowed_countries: ["JP"] },
         ...(shippingRate
           ? {

@@ -6,3 +6,6 @@ dist/
 .dev.vars.*
 .agent/
 .DS_Store
+
+# AI agent auto-generated report (regenerated per audit run)
+AUDITS_REPORT.md

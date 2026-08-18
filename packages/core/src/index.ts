@@ -1,6 +1,12 @@
 export {
+  createAccessGuard,
+  type AccessGuardOptions,
+  type AccessGuardResult,
+} from "./access.js";
+export {
   createCheckoutHandler,
   type CheckOffer,
+  type CheckoutCustomField,
   type CheckoutHandler,
   type CheckoutHandlerOptions,
   type CheckoutOffer,
@@ -22,6 +28,7 @@ export {
   createUmecMiddleware,
   type UmecMiddleware,
   type UmecMiddlewareContext,
+  type UmecLimitedPage,
   type UmecMiddlewareNext,
   type UmecMiddlewareOptions,
 } from "./middleware.js";
@@ -47,6 +54,7 @@ export {
   type SupportedWebhookEvent,
   type WebhookHandler,
   type WebhookHandlerOptions,
+  type WebhookEmailResult,
   type WebhookItem,
   type WebhookOrder,
   type WebhookRecordedOrder,

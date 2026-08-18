@@ -5,13 +5,6 @@ const SECURITY_HEADERS = {
   "Referrer-Policy": "strict-origin-when-cross-origin",
 };
 
-const LIMITED_DOCS = [
-  {
-    pathPrefix: "/docs/asahiko2026special",
-    expiresAt: Date.parse("2026-08-12T14:59:59.999Z"),
-  },
-] as const;
-
 // Astro の ValidRedirectStatus と同一のユニオンに揃える。
 // number に広げると Astro の APIContext が strict モードで代入不能になる（TS2345）
 export type UmecRedirectStatus = 300 | 301 | 302 | 303 | 304 | 307 | 308;
@@ -25,8 +18,14 @@ export type UmecMiddlewareNext = () => Response | Promise<Response>;
 
 export type UmecMiddleware = (context: UmecMiddlewareContext, next: UmecMiddlewareNext) => Promise<Response>;
 
+export type UmecLimitedPage = {
+  pathPrefix: string;
+  expiresAt: number;
+};
+
 export type UmecMiddlewareOptions = {
   maintenanceMode: boolean;
+  limitedPages?: UmecLimitedPage[];
 };
 
 function withSecurityHeaders(response: Response) {
@@ -39,12 +38,12 @@ function withSecurityHeaders(response: Response) {
   return securedResponse;
 }
 
-export function createUmecMiddleware({ maintenanceMode }: UmecMiddlewareOptions): UmecMiddleware {
+export function createUmecMiddleware({ maintenanceMode, limitedPages = [] }: UmecMiddlewareOptions): UmecMiddleware {
   return async (context, next) => {
     const path = context.url.pathname;
 
-    const limitedDoc = LIMITED_DOCS.find(({ pathPrefix }) => path === pathPrefix || path.startsWith(`${pathPrefix}/`));
-    if (limitedDoc && Date.now() > limitedDoc.expiresAt) {
+    const limitedPage = limitedPages.find(({ pathPrefix }) => path === pathPrefix || path.startsWith(`${pathPrefix}/`));
+    if (limitedPage && Date.now() > limitedPage.expiresAt) {
       return withSecurityHeaders(
         new Response("Not found", {
           status: 404,
