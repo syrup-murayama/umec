@@ -1,6 +1,6 @@
 {
   "name": "@umec/core",
-  "version": "0.1.0-alpha.7",
+  "version": "0.1.0-alpha.9",
   "description": "Headless EC logic for umec — config schema and shared handlers",
   "type": "module",
   "license": "MIT",
@@ -51,10 +51,18 @@
     "./webhook": {
       "types": "./dist/webhook.d.ts",
       "import": "./dist/webhook.js"
+    },
+    "./db": {
+      "types": "./dist/db/index.d.ts",
+      "import": "./dist/db/index.js"
     }
   },
+  "bin": {
+    "umec": "./dist/cli.js"
+  },
   "files": [
-    "dist"
+    "dist",
+    "schema"
   ],
   "scripts": {
     "build": "tsup",

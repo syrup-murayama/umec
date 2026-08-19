@@ -13,5 +13,5 @@
     "erasableSyntaxOnly": true,
     "noUncheckedSideEffectImports": true
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "schema/upgrades/**/*.ts"]
 }

@@ -59,3 +59,8 @@ export {
   type WebhookOrder,
   type WebhookRecordedOrder,
 } from "./webhook.js";
+export {
+  assertSchemaCompatible,
+  SchemaVersionError,
+  SNAPSHOT_SCHEMA_VERSION,
+} from "./db/index.js";

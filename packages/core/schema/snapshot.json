@@ -1,0 +1,433 @@
+{
+  "version": 7,
+  "tables": {
+    "processed_events": {
+      "name": "processed_events",
+      "sql": "CREATE TABLE processed_events (\n  event_id     TEXT PRIMARY KEY,\n  processed_at INTEGER NOT NULL\n)",
+      "columns": [
+        {
+          "cid": 0,
+          "name": "event_id",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "processed_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "indexes": [],
+      "foreignKeys": []
+    },
+    "orders": {
+      "name": "orders",
+      "sql": "CREATE TABLE orders (\n  id                 TEXT PRIMARY KEY,\n  email              TEXT NOT NULL,\n  name               TEXT,\n  phone              TEXT,\n  items_json         TEXT NOT NULL,\n  amount             INTEGER NOT NULL,\n  shipping           INTEGER,\n  address_json       TEXT,\n  payment_intent     TEXT,\n  custom_fields_json TEXT,\n  status             TEXT NOT NULL DEFAULT 'pending',\n  run_id             TEXT,\n  email_status       TEXT CHECK (email_status IN ('sent', 'failed')),\n  created_at         INTEGER NOT NULL,\n  shipped_at         INTEGER\n, tracking_number TEXT, carrier TEXT\n  CHECK (carrier IN ('yamato', 'sagawa', 'japanpost', 'other') OR carrier IS NULL), extras_json TEXT)",
+      "columns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "email",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "name",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "phone",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "items_json",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "amount",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "shipping",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "address_json",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "payment_intent",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "custom_fields_json",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 10,
+          "name": "status",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "'pending'",
+          "pk": 0
+        },
+        {
+          "cid": 11,
+          "name": "run_id",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 12,
+          "name": "email_status",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 13,
+          "name": "created_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 14,
+          "name": "shipped_at",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 15,
+          "name": "tracking_number",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 16,
+          "name": "carrier",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 17,
+          "name": "extras_json",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "indexes": [
+        {
+          "name": "orders_payment_intent_idx",
+          "unique": 0,
+          "origin": "c",
+          "columns": [
+            "payment_intent"
+          ]
+        }
+      ],
+      "foreignKeys": []
+    },
+    "inventory": {
+      "name": "inventory",
+      "sql": "CREATE TABLE inventory (\n  sku        TEXT PRIMARY KEY,\n  stock      INTEGER NOT NULL DEFAULT 0,\n  updated_at INTEGER NOT NULL\n)",
+      "columns": [
+        {
+          "cid": 0,
+          "name": "sku",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "stock",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "0",
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "updated_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "indexes": [],
+      "foreignKeys": []
+    },
+    "admin_audit_log": {
+      "name": "admin_audit_log",
+      "sql": "CREATE TABLE admin_audit_log (\n  id INTEGER PRIMARY KEY AUTOINCREMENT,\n  entity_type TEXT NOT NULL,\n  entity_id TEXT NOT NULL,\n  action TEXT NOT NULL,\n  delta INTEGER,\n  reason TEXT,\n  admin_email TEXT,\n  actor TEXT NOT NULL DEFAULT 'human',\n  detail_json TEXT,\n  created_at INTEGER NOT NULL\n)",
+      "columns": [
+        {
+          "cid": 0,
+          "name": "id",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "entity_type",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "entity_id",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "action",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "delta",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "reason",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "admin_email",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "actor",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": "'human'",
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "detail_json",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "created_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_admin_audit_log_entity",
+          "unique": 0,
+          "origin": "c",
+          "columns": [
+            "entity_type",
+            "entity_id",
+            "created_at"
+          ]
+        }
+      ],
+      "foreignKeys": []
+    },
+    "products": {
+      "name": "products",
+      "sql": "CREATE TABLE products (\n  sku TEXT PRIMARY KEY,\n  name TEXT NOT NULL,\n  description TEXT,\n  price INTEGER NOT NULL CHECK (price > 0),\n  shipping_units INTEGER NOT NULL DEFAULT 1 CHECK (shipping_units > 0),\n  images_json TEXT,\n  gtin TEXT,\n  category TEXT,\n  active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),\n  low_stock_threshold INTEGER,\n  created_at INTEGER NOT NULL,\n  updated_at INTEGER NOT NULL,\n  updated_by TEXT\n)",
+      "columns": [
+        {
+          "cid": 0,
+          "name": "sku",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 1
+        },
+        {
+          "cid": 1,
+          "name": "name",
+          "type": "TEXT",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 2,
+          "name": "description",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 3,
+          "name": "price",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 4,
+          "name": "shipping_units",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "1",
+          "pk": 0
+        },
+        {
+          "cid": 5,
+          "name": "images_json",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 6,
+          "name": "gtin",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 7,
+          "name": "category",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 8,
+          "name": "active",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": "1",
+          "pk": 0
+        },
+        {
+          "cid": 9,
+          "name": "low_stock_threshold",
+          "type": "INTEGER",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 10,
+          "name": "created_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 11,
+          "name": "updated_at",
+          "type": "INTEGER",
+          "notnull": 1,
+          "dflt_value": null,
+          "pk": 0
+        },
+        {
+          "cid": 12,
+          "name": "updated_by",
+          "type": "TEXT",
+          "notnull": 0,
+          "dflt_value": null,
+          "pk": 0
+        }
+      ],
+      "indexes": [],
+      "foreignKeys": []
+    }
+  }
+}

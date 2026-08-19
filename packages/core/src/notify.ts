@@ -1,14 +1,9 @@
 import { Resend } from "resend";
+import type { UnshippedOrder as SnapshotUnshippedOrder } from "./db/orders.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-export type UnshippedOrder = {
-  id: string;
-  name: string | null;
-  items_json: string | null;
-  amount: number | null;
-  created_at: number | string | null;
-};
+export type UnshippedOrder = SnapshotUnshippedOrder;
 
 export type NotifyEnv = {
   DISCORD_WEBHOOK_URL?: string;
@@ -29,6 +24,7 @@ export type NotifyProductsMap = Record<string, NotifyProduct | undefined>;
 export type NotifyUnshippedOptions = {
   alertFrom: string;
   alertTo: string;
+  alertSubject: string;
   products?: NotifyProductsMap;
 };
 
@@ -100,22 +96,23 @@ function formatOrderLine(order: UnshippedOrder, products: NotifyProductsMap, now
 export async function notifyUnshipped(
   orders: UnshippedOrder[],
   env: NotifyEnv,
-  { alertFrom, alertTo, products = {} }: NotifyUnshippedOptions,
+  { alertFrom, alertTo, alertSubject, products = {} }: NotifyUnshippedOptions,
 ) {
   if (orders.length === 0) return;
-  if (!env.DISCORD_WEBHOOK_URL) throw new Error("DISCORD_WEBHOOK_URL is not configured");
   if (!env.RESEND_API_KEY) throw new Error("RESEND_API_KEY is not configured");
 
   const lines = orders.map((order) => formatOrderLine(order, products));
   const content = ["未発送アラート: pending の注文があります。", "", ...lines].join("\n");
 
-  const discordResponse = await fetch(env.DISCORD_WEBHOOK_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ content, allowed_mentions: { parse: [] } }),
-  });
-  if (!discordResponse.ok) {
-    throw new Error(`Discord notification failed: ${discordResponse.status}`);
+  if (env.DISCORD_WEBHOOK_URL) {
+    const discordResponse = await fetch(env.DISCORD_WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content, allowed_mentions: { parse: [] } }),
+    });
+    if (!discordResponse.ok) {
+      throw new Error(`Discord notification failed: ${discordResponse.status}`);
+    }
   }
 
   const rows = lines
@@ -134,7 +131,7 @@ export async function notifyUnshipped(
   const { error } = await resend.emails.send({
     from: alertFrom,
     to: alertTo,
-    subject: "【emu】未発送アラート",
+    subject: alertSubject,
     html: `<!DOCTYPE html>
 <html lang="ja">
 <head><meta charset="UTF-8"></head>

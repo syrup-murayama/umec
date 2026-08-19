@@ -1,0 +1,11 @@
+{
+  "schema/migrations/0001_processed_events.sql": "a5f525d69fb9591d0bbe0701fa28e4e3c11316ec60edcf3970d0b947ccef1bb9",
+  "schema/migrations/0002_orders.sql": "4d6e8fb3ee46e9afc3b47a9312ffe9ad1cf20e36eed51055d4c073e2ae85afd5",
+  "schema/migrations/0003_inventory.sql": "9ec36f50c9d3514cd2a1607c58f05065b8d5ff89ff9ce3eb92e20f1895ddebf1",
+  "schema/migrations/0004_admin_audit_log.sql": "04f4afbe91b484afb2239691ea2eb42cd2c01cb5b9881de29bdc0020cf259c3f",
+  "schema/migrations/0005_orders_tracking.sql": "22a0707ac907f31341dbca5347d803f1668f0e5630c9b94f7644ddad5211757b",
+  "schema/migrations/0006_products.sql": "f5710befe27d0324bcb1adb4537f9b53ef69dfa9407ce271dd13b2fb972b4452",
+  "schema/migrations/0007_orders_extras.sql": "6dd00e5b3b4e554a89c4b5dc5cc6d46b77d681de57e36521c2e4449ba1ba1c60",
+  "schema/upgrades/v2-to-v6.ts": "419704d04f583133be5b8b0d45a674619d1bdf60f9077614effa306862ba0e2f",
+  "schema/upgrades/types.ts": "0e45a9037c5e957eadb4b9ff66034e77be64a475eb18ca69b59a554d87070c54"
+}
