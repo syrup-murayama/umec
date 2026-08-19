@@ -286,9 +286,25 @@ export async function runMigrate(options: MigrateOptions): Promise<MigrateResult
         await upgrade.apply(options.executor);
         await recordMigration(options.executor, upgrade.name, `upgrade:${upgrade.name}`, "upgrade", now);
         applied.push(upgrade.name);
-        const ordersMigration = coreMigrations.find((migration) => migration.name === "0002_orders.sql");
-        if (ordersMigration) {
-          await recordMigration(options.executor, ordersMigration.name, sha256File(ordersMigration.path), "sql", now);
+        alreadyByName.set(upgrade.name, { name: upgrade.name, checksum: `upgrade:${upgrade.name}`, kind: "upgrade" });
+        // upgradeV2toV6 bakes 0002 (PK rebuild) and 0005 (tracking_number/carrier
+        // ALTER) into a single orders_new DDL (V6_ORDERS_DDL). Both must be marked
+        // applied — in the DB *and* in alreadyByName, which the normal loop below
+        // reads from — so it doesn't re-run 0005's ALTER against columns that
+        // already exist. Do not add anything else here:
+        //   - 0003/0004/0006 create unrelated tables (IF NOT EXISTS) that
+        //     V6_ORDERS_DDL never touches — they still need to run normally.
+        //   - 0007 (extras_json) postdates this upgrade's toVersion (6) and is
+        //     NOT part of V6_ORDERS_DDL — it must also still run normally.
+        // (real remote-D1 repro, 2026-08-19)
+        for (const supersededName of ["0002_orders.sql", "0005_orders_tracking.sql"]) {
+          const superseded = coreMigrations.find((migration) => migration.name === supersededName);
+          if (!superseded) {
+            throw new Error(`upgradeV2toV6 supersedes unknown migration ${supersededName} — schema/migrations/ drifted`);
+          }
+          const checksum = sha256File(superseded.path);
+          await recordMigration(options.executor, superseded.name, checksum, "sql", now);
+          alreadyByName.set(superseded.name, { name: superseded.name, checksum, kind: "sql" });
         }
       }
     }
@@ -332,13 +348,18 @@ export async function runMigrate(options: MigrateOptions): Promise<MigrateResult
   }
 }
 
-function pendingMigrationFixes(pendingSql: string, finding: DriftFinding): boolean {
+export function pendingMigrationFixes(pendingSql: string, finding: DriftFinding): boolean {
   if (finding.message.includes(`required table "${finding.table}" is missing`)) {
     return new RegExp(`CREATE TABLE(?: IF NOT EXISTS)?\\s+${finding.table}\\b`, "i").test(pendingSql);
   }
-  const missingColumn = finding.message.match(/required column "[^."]+\.([^"]+)" is missing/);
-  if (missingColumn?.[1]) {
-    return new RegExp(`ADD COLUMN\\s+${missingColumn[1]}\\b`, "i").test(pendingSql);
+  const missingColumn = finding.message.match(/required column "([^."]+)\.([^"]+)" is missing/);
+  if (missingColumn?.[1] && missingColumn[2]) {
+    // Scope to the owning table — an unrelated ALTER TABLE elsewhere in pendingSql
+    // that happens to ADD COLUMN the same name must not count as a fix
+    // (a finding for "inventory.sku" could otherwise be false-matched by an
+    // unrelated "ALTER TABLE orders ADD COLUMN sku").
+    const [, table, column] = missingColumn;
+    return new RegExp(`ALTER TABLE\\s+${table}\\s+ADD COLUMN\\s+${column}\\b`, "i").test(pendingSql);
   }
   return false;
 }

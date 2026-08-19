@@ -1,6 +1,6 @@
 {
   "name": "@umec/core",
-  "version": "0.1.0-alpha.9",
+  "version": "0.1.0-alpha.10",
   "description": "Headless EC logic for umec — config schema and shared handlers",
   "type": "module",
   "license": "MIT",
