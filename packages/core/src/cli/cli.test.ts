@@ -7,7 +7,10 @@ import { applySql, createMemoryDatabase } from "../db/memory-d1.js";
 import type { SchemaSnapshot } from "../db/snapshot.js";
 import { runCli } from "./index.js";
 import { executorFromDatabase } from "./executor.js";
+import { applyV2toV6, upgradeV2toV6 } from "../../schema/upgrades/v2-to-v6.js";
+import { sha256File } from "./checksum.js";
 import type { DriftFinding } from "../db/drift.js";
+import { TRACKING_TABLES_SQL } from "../db/schema-version.js";
 import { coreVersionFromPackage, pendingMigrationFixes, runMigrate } from "./migrate.js";
 
 const LEGACY_ORDERS = `CREATE TABLE IF NOT EXISTS orders (
@@ -192,6 +195,70 @@ describe("umec CLI", () => {
     });
     expect(reMigrated.exitCode).toBe(0);
     expect(reMigrated.applied).toEqual([]);
+  });
+
+  it("re-repairs a remote where a previous repair attempt already rebuilt orders but never recorded 0005", async () => {
+    // Real-world repro (remote D1, 2026-08-19): a *previous* --repair attempt
+    // (on an older core version) ran the v2-to-v6 DDL successfully, applied
+    // 0003/0004 via the normal loop, then failed on 0005 — leaving orders
+    // already in the new (id PK, tracking_number/carrier) shape while
+    // umec_migrations has no record of 0005. Retrying --repair against that
+    // state must not fail again: canApply()/detectLegacyOrdersPk() now
+    // reports false (orders isn't legacy anymore), so the fix must not be
+    // gated solely on "did this call just run the upgrade DDL".
+    const db = createMemoryDatabase();
+    applySql(db, listCoreMigrations()[0]!.sql);
+    applySql(db, LEGACY_ORDERS);
+    applySql(
+      db,
+      `INSERT INTO orders (event_id, session_id, amount_total, currency, customer_email, created_at)
+       VALUES ('evt_1', 'cs_1', 500, 'jpy', 'a@example.com', 1)`,
+    );
+    const preUpgradeExecutor = executorFromDatabase(db);
+    await applyV2toV6(preUpgradeExecutor);
+
+    applySql(db, listCoreMigrations().find((migration) => migration.name === "0003_inventory.sql")!.sql);
+    applySql(db, listCoreMigrations().find((migration) => migration.name === "0004_admin_audit_log.sql")!.sql);
+    applySql(db, TRACKING_TABLES_SQL);
+    for (const name of ["0001_processed_events.sql", "0002_orders.sql", "0003_inventory.sql", "0004_admin_audit_log.sql"]) {
+      const path = listCoreMigrations().find((migration) => migration.name === name)!.path;
+      applySql(
+        db,
+        `INSERT INTO umec_migrations (name, checksum, kind, applied_at) VALUES ('${name}', '${sha256File(path)}', 'sql', 1)`,
+      );
+    }
+    applySql(
+      db,
+      `INSERT INTO umec_migrations (name, checksum, kind, applied_at) VALUES ('${upgradeV2toV6.name}', 'upgrade:${upgradeV2toV6.name}', 'upgrade', 1)`,
+    );
+
+    const executor = executorFromDatabase(db);
+    const snapshot = loadSnapshotJson() as SchemaSnapshot;
+    const repaired = await runMigrate({
+      cwd: tmpdir(),
+      executor,
+      snapshot,
+      repair: true,
+      coreVersion: coreVersionFromPackage(),
+      now: 2,
+    });
+    expect(repaired.exitCode).toBe(0);
+
+    const recordedNames = (
+      await db.prepare("SELECT name FROM umec_migrations").all<{ name: string }>()
+    ).results.map((row) => row.name);
+    expect(recordedNames).toContain("0005_orders_tracking.sql");
+    const columns = await db.prepare("PRAGMA table_info(orders)").all<{ name: string }>();
+    expect(columns.results.some((column) => column.name === "tracking_number")).toBe(true);
+
+    const reMigrated = await runMigrate({
+      cwd: tmpdir(),
+      executor,
+      snapshot,
+      coreVersion: coreVersionFromPackage(),
+      now: 3,
+    });
+    expect(reMigrated.exitCode).toBe(0);
   });
 
   it("pendingMigrationFixes scopes column checks to the owning table", () => {

@@ -276,27 +276,46 @@ export async function runMigrate(options: MigrateOptions): Promise<MigrateResult
 
     if (options.repair) {
       for (const upgrade of CORE_UPGRADES) {
-        const needed = dryRun ? true : await upgrade.canApply(options.executor);
-        if (!needed) continue;
-        print(`upgrade ${upgrade.name} (${upgrade.fromVersion} → ${upgrade.toVersion})`);
-        if (dryRun) {
+        const legacyPresent = dryRun ? true : await upgrade.canApply(options.executor);
+        if (legacyPresent) {
+          print(`upgrade ${upgrade.name} (${upgrade.fromVersion} → ${upgrade.toVersion})`);
+          if (dryRun) {
+            applied.push(upgrade.name);
+            continue;
+          }
+          await upgrade.apply(options.executor);
+          await recordMigration(options.executor, upgrade.name, `upgrade:${upgrade.name}`, "upgrade", now);
           applied.push(upgrade.name);
-          continue;
+          alreadyByName.set(upgrade.name, { name: upgrade.name, checksum: `upgrade:${upgrade.name}`, kind: "upgrade" });
         }
-        await upgrade.apply(options.executor);
-        await recordMigration(options.executor, upgrade.name, `upgrade:${upgrade.name}`, "upgrade", now);
-        applied.push(upgrade.name);
-        alreadyByName.set(upgrade.name, { name: upgrade.name, checksum: `upgrade:${upgrade.name}`, kind: "upgrade" });
+        // dryRun is always true here only via the legacyPresent branch above,
+        // which already `continue`s — so reaching this point means dryRun is
+        // false and we have a real executor to write through.
         // upgradeV2toV6 bakes 0002 (PK rebuild) and 0005 (tracking_number/carrier
         // ALTER) into a single orders_new DDL (V6_ORDERS_DDL). Both must be marked
         // applied — in the DB *and* in alreadyByName, which the normal loop below
         // reads from — so it doesn't re-run 0005's ALTER against columns that
-        // already exist. Do not add anything else here:
-        //   - 0003/0004/0006 create unrelated tables (IF NOT EXISTS) that
-        //     V6_ORDERS_DDL never touches — they still need to run normally.
-        //   - 0007 (extras_json) postdates this upgrade's toVersion (6) and is
-        //     NOT part of V6_ORDERS_DDL — it must also still run normally.
-        // (real remote-D1 repro, 2026-08-19)
+        // already exist.
+        //
+        // This runs whenever orders is no longer in the legacy shape — which is
+        // true either because we just fixed it above, or because a *previous*
+        // repair attempt already ran the DDL but was interrupted (crashed,
+        // network error, core updated mid-retry) before recording 0005. Gating
+        // this only on `legacyPresent` (the original design) misses that second
+        // case: canApply() reads the live schema, sees orders is already
+        // rebuilt, reports false, and the whole block — including the supersede
+        // bookkeeping — gets skipped, leaving 0005 permanently unrecorded even
+        // though its effect is already live. The normal loop below then tries
+        // to re-run 0005's ALTER forever (real remote-D1 repro, 2026-08-19: a
+        // retry after a failed repair reproduced the original bug via this
+        // path). recordMigration() is an upsert with the migration's real
+        // checksum, so calling it here when nothing was actually missing is a
+        // harmless no-op.
+        //
+        // Do not add 0003/0004/0006 here — they create unrelated tables
+        // (IF NOT EXISTS) that V6_ORDERS_DDL never touches and still need to
+        // run normally. Same for 0007 (extras_json): it postdates this
+        // upgrade's toVersion (6) and isn't part of V6_ORDERS_DDL.
         for (const supersededName of ["0002_orders.sql", "0005_orders_tracking.sql"]) {
           const superseded = coreMigrations.find((migration) => migration.name === supersededName);
           if (!superseded) {
